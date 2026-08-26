@@ -291,15 +291,68 @@
 }
 
 [data-component="reasoning-part"] {
+  /* Number of visible lines in the unexpanded preview state; drives the tokenized max-height calc below. */
+  --reasoning-preview-lines: 4;
   width: 100%;
+  margin-top: 24px;
   color: var(--v2-text-text-muted);
   line-height: var(--line-height-normal);
 
+  /* Inherit base tool-trigger styles from basic-tool.css; only override specifics */
+  [data-component="tool-trigger"] {
+    cursor: pointer;
+  }
+
+  /* Chevron rotation on expand */
+  [data-slot="basic-tool-tool-action"] {
+    transition: transform 0.15s ease;
+  }
+
+  &[data-state="expanded"] [data-slot="basic-tool-tool-action"] {
+    transform: rotate(180deg);
+  }
+
+  /* Keep the expanded Thinking header visible while its body scrolls past; the shared offset leaves room for the session title. */
+  &[data-state="expanded"] > [data-component="tool-trigger"] {
+    position: sticky;
+    top: var(--sticky-accordion-top, 0px);
+    z-index: 20;
+    background-color: var(--v2-background-bg-base);
+  }
+
+  [data-slot="reasoning-body"] {
+    width: 100%;
+    background: transparent;
+    margin-top: 4px;
+    scrollbar-width: none;
+
+    &::-webkit-scrollbar {
+      display: none;
+    }
+  }
+
+  /* Keep the live preview compact while allowing JS to follow the newest rendered lines.
+     max-height is tokenized: font-size-small × line-height-large × reasoning-preview-lines
+     so adjusting the variable resizes the clamp without touching this rule.
+     --line-height-large cannot be used here because it is a percentage (150%),
+     which CSS calc() cannot multiply with a length. 1.5 is the numeric equivalent. */
+  &[data-state="preview"] [data-slot="reasoning-body"] {
+    max-height: calc(var(--font-size-small) * 1.5 * var(--reasoning-preview-lines));
+    overflow-y: hidden;
+    user-select: none;
+  }
+
+  &[data-state="collapsed"] [data-slot="reasoning-body"] {
+    display: none;
+  }
+
   [data-component="markdown"] {
-    margin-top: 16px;
+    padding: 0 12px;
     font-style: normal;
-    font-size: 13px;
+    font-size: var(--font-size-small);
+    line-height: var(--line-height-large);
     color: var(--v2-text-text-muted);
+    overflow-wrap: anywhere;
 
     strong,
     b {

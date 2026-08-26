@@ -107,6 +107,19 @@ export function projectForSession<T extends { id?: string; worktree: string; san
   )
 }
 
+// Display name for a session's project. Non-git directories all resolve to
+// the server's shared "global" project (matched here by id or worktree "/"),
+// which has no stable name of its own — fall back to the session's own
+// directory so the placeholder never leaks onto individual projects.
+export function projectDisplayName(
+  session: Pick<Session, "directory">,
+  project?: { id?: string; name?: string; worktree: string },
+) {
+  if (!project || project.id === "global" || project.worktree === "/")
+    return getFilename(session.directory) || session.directory
+  return project.name || getFilename(project.worktree) || getFilename(session.directory) || session.directory
+}
+
 export const errorMessage = (err: unknown, fallback: string) => {
   if (err && typeof err === "object" && "data" in err) {
     const data = (err as { data?: { message?: string } }).data

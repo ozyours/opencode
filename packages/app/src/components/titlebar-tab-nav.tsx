@@ -7,7 +7,7 @@ import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
 import { ServerConnection, serverName } from "@/context/server"
-import { displayName, projectForSession } from "@/pages/layout/helpers"
+import { projectDisplayName, projectForSession } from "@/pages/layout/helpers"
 import { SessionTabAvatar } from "@/pages/layout/session-tab-avatar"
 import type { Session } from "@opencode-ai/sdk/v2"
 import { canOpenTabRename, forwardTabRef } from "./titlebar-tab-gesture"
@@ -55,12 +55,22 @@ export function TabNavItem(props: {
     if (!session) return
     return projectForSession(session, serverCtx()?.projects.list() ?? [])
   })
-  const title = createMemo(() => props.session()?.title ?? props.fallbackTitle)
+  // Raw session title (without project prefix) — used for editing and internal logic.
+  const sessionTitle = createMemo(() => props.session()?.title ?? props.fallbackTitle)
 
   const projectName = createMemo(() => {
     const session = props.session()
     if (!session) return
-    return displayName(project() ?? { worktree: session.directory })
+    return projectDisplayName(session, project())
+  })
+
+  // Display-formatted title with project prefix — "Project: Session Title" for disambiguation.
+  const title = createMemo(() => {
+    const sTitle = sessionTitle()
+    const pName = projectName()
+    if (!sTitle) return undefined
+    if (!pName) return sTitle
+    return `${pName}: ${sTitle}`
   })
   const previewPath = createMemo(() => {
     const session = props.session()
@@ -144,6 +154,7 @@ export function TabNavItem(props: {
     if (!canOpenTabRename(props.dragging, editing(), rename.isPending)) return
     const session = props.session()
     if (!session) return
+    // Show only the session title during editing — the project prefix is display-only.
     titleEl.textContent = session.title
     setEditing(true)
 
@@ -263,6 +274,7 @@ export function TabNavItem(props: {
             }
             if (event.key !== "Escape") return
             event.preventDefault()
+            // Revert to the session title (without the project prefix) during editing.
             titleEl.textContent = props.session()?.title ?? ""
             void closeRename(false)
           }}

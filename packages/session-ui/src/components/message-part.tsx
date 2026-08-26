@@ -1756,18 +1756,123 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   )
 }
 
+/**
+ * Renders a reasoning (thinking) part from the assistant.
+ *
+ * Display is a three-state machine driven by streaming status and open state:
+ * - **expanded** – user explicitly opened; full content visible.
+ * - **preview** – still streaming, not opened; body clamped to ~4 lines
+ *   with auto-scroll pinned to newest content.
+ * - **collapsed** – completed and not opened; body hidden entirely.
+ *
+ * The header follows the same `tool-trigger` pattern used by shell, edit,
+ * and other tool parts so the chevron and click behaviour stay consistent.
+ * Open state is controlled by the parent when `onToolOpenChange` is provided
+ * (survives virtualizer remounts); standalone usage falls back to local state.
+ */
 PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
   const data = useData()
+  const i18n = useI18n()
   const part = () => props.part as ReasoningPart
+  /** True while the assistant message has not yet emitted a completed timestamp. */
   const streaming = createMemo(
     () => props.message.role === "assistant" && typeof (props.message as AssistantMessage).time.completed !== "number",
   )
   const text = () => readPartText(data.store.part_text_accum_delta, part())
 
+  // Controlled when the parent tracks open state (survives virtualizer remounts);
+  // standalone consumers fall back to local state.
+  const [localOpen, setLocalOpen] = createSignal(false)
+  const open = () => (props.onToolOpenChange ? (props.toolOpen ?? props.defaultOpen ?? false) : localOpen())
+
+  // Preview mode follows newly revealed content until the user scrolls away from the bottom.
+  const [pinned, setPinned] = createSignal(true)
+  let body: HTMLDivElement | undefined
+  let observer: ResizeObserver | undefined
+  let mutationObserver: MutationObserver | undefined
+
+  const state = () => (open() ? "expanded" : streaming() ? "preview" : "collapsed")
+
+  /** Keep the streaming reasoning preview aligned with its newest content. */
+  const pin = () => {
+    if (!body) return
+    body.scrollTop = body.scrollHeight - body.clientHeight
+    props.onContentRendered?.()
+  }
+
+  onCleanup(() => {
+    observer?.disconnect()
+    mutationObserver?.disconnect()
+  })
+
   return (
     <Show when={text()}>
-      <div data-component="reasoning-part" data-timeline-part-id={part().id}>
-        <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
+      <div data-component="reasoning-part" data-timeline-part-id={part().id} data-state={state()}>
+        <div
+          data-component="tool-trigger"
+          data-clickable="true"
+          role="button"
+          tabIndex={0}
+          aria-expanded={open()}
+          onClick={() => {
+            if (props.onToolOpenChange) props.onToolOpenChange(!open())
+            else setLocalOpen(!open())
+            props.onContentRendered?.()
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault()
+              if (props.onToolOpenChange) props.onToolOpenChange(!open())
+              else setLocalOpen(!open())
+              props.onContentRendered?.()
+            }
+          }}
+        >
+          <div data-slot="basic-tool-tool-trigger-content">
+            <div data-slot="basic-tool-tool-info">
+              <div data-slot="basic-tool-tool-info-structured">
+                <div data-slot="basic-tool-tool-info-main">
+                  <span data-slot="basic-tool-tool-title">
+                    <Show when={streaming() && !open()} fallback={<span>{i18n.t("ui.sessionTurn.status.thinking")}</span>}>
+                      <TextShimmer text={i18n.t("ui.sessionTurn.status.thinking")} />
+                    </Show>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div data-slot="basic-tool-tool-action">
+            <Icon name="chevron-down" size="small" />
+          </div>
+        </div>
+        <div
+          data-slot="reasoning-body"
+          ref={(el) => {
+            body = el
+            // Observe instead of tracking text(): the paced markdown reveals
+            // content on a timer, so only the DOM size knows when new lines landed.
+            observer?.disconnect()
+            observer = new ResizeObserver(() => {
+              if (state() !== "preview" || !pinned()) return
+              pin()
+            })
+            observer.observe(el)
+            mutationObserver?.disconnect()
+            mutationObserver = new MutationObserver(() => {
+              if (state() !== "preview" || !pinned()) return
+              pin()
+            })
+            mutationObserver.observe(el, { childList: true, subtree: true, characterData: true })
+          }}
+          onScroll={() => {
+            if (!body) return
+            setPinned(body.scrollHeight - body.scrollTop - body.clientHeight < 8)
+          }}
+        >
+          <Show when={streaming()} fallback={<Markdown text={text()} cacheKey={part().id} streaming={false} />}>
+            <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
+          </Show>
+        </div>
       </div>
     </Show>
   )

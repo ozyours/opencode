@@ -72,6 +72,8 @@ import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { notifySessionTabsRemoved } from "@/components/titlebar-session-events"
 import { sessionTitle } from "@/utils/session-title"
+import { projectDisplayName, projectForSession } from "@/pages/layout/helpers"
+import { useGlobal } from "@/context/global"
 import { scheduleConnectedMeasure } from "./measure"
 import { observeElementOffsetReconnectAware } from "./observe-element-offset"
 import { createTimelineProjection } from "./projection"
@@ -295,6 +297,20 @@ export function MessageTimeline(props: {
     const id = sessionID()
     if (!id) return
     return sync().session.get(id)
+  })
+  // Derive the project name from the session's server context for the sticky header breadcrumb.
+  // Resolve through the page's server SDK rather than matching scope keys manually.
+  const global = useGlobal()
+  const serverCtx = createMemo(() => global.ensureServerCtx(serverSDK().server))
+  const project = createMemo(() => {
+    const session = info()
+    if (!session) return
+    return projectForSession(session, serverCtx().projects.list())
+  })
+  const projectName = createMemo(() => {
+    const session = info()
+    if (!session) return
+    return projectDisplayName(session, project())
   })
   const titleValue = createMemo(() => info()?.title)
   const titleLabel = createMemo(() => sessionTitle(titleValue()))
@@ -1406,6 +1422,15 @@ export function MessageTimeline(props: {
                       aria-hidden="true"
                     >
                       /
+                    </span>
+                  </Show>
+                  {/* Project name: shown between parent title and child title in the breadcrumb trail */}
+                  <Show when={projectName()}>
+                    <span
+                      data-slot="session-title-project"
+                      class="truncate text-[13px] font-[530] leading-4 tracking-[-0.04px] text-v2-text-text-muted"
+                    >
+                      {projectName()}:
                     </span>
                   </Show>
                   <Show when={childTitle() || title.editing}>
